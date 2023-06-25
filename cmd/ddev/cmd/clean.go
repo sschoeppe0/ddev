@@ -72,7 +72,6 @@ Additional commands that can help clean up resources:
 		ddevapp.PowerOff()
 
 		globalDdevDir := globalconfig.GetGlobalDdevDir()
-		_ = os.RemoveAll(filepath.Join(globalDdevDir, "testcache"))
 		_ = os.RemoveAll(filepath.Join(globalDdevDir, "bin"))
 
 		amplitude.Clean()

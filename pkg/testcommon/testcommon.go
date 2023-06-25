@@ -1,33 +1,32 @@
 package testcommon
 
 import (
+	"crypto/sha256"
 	"crypto/tls"
-	"github.com/ddev/ddev/pkg/ddevapp"
-	"github.com/ddev/ddev/pkg/globalconfig"
-	"github.com/ddev/ddev/pkg/output"
-	"github.com/docker/docker/pkg/homedir"
-	"io"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
-	"time"
-
-	log "github.com/sirupsen/logrus"
-
-	"path"
-
 	"fmt"
-
-	"github.com/ddev/ddev/pkg/archive"
-	"github.com/ddev/ddev/pkg/dockerutil"
-	"github.com/ddev/ddev/pkg/fileutil"
-	"github.com/ddev/ddev/pkg/util"
-	"github.com/pkg/errors"
-	asrt "github.com/stretchr/testify/assert"
+	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/ddev/ddev/pkg/archive"
+	"github.com/ddev/ddev/pkg/ddevapp"
+	"github.com/ddev/ddev/pkg/dockerutil"
+	"github.com/ddev/ddev/pkg/fileutil"
+	"github.com/ddev/ddev/pkg/globalconfig"
+	"github.com/ddev/ddev/pkg/output"
+	"github.com/ddev/ddev/pkg/util"
+	"github.com/docker/docker/pkg/homedir"
+	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
+	asrt "github.com/stretchr/testify/assert"
 )
 
 // URIWithExpect pairs a URI like "/readme.html" with some substring content "should be found in URI"
@@ -295,12 +294,17 @@ func ContainerCheck(checkName string, checkState string) (bool, error) {
 // internalExtractionPath is the place in the archive to start extracting
 // sourceURL is the actual URL to download.
 // Returns the extracted path, the tarball path (both possibly cached), and an error value.
-func GetCachedArchive(siteName string, prefixString string, internalExtractionPath string, sourceURL string) (string, string, error) {
-	uniqueName := prefixString + "_" + path.Base(sourceURL)
-	testCache := filepath.Join(globalconfig.GetGlobalDdevDir(), "testcache", siteName)
+func GetCachedArchive(_, _, internalExtractionPath, sourceURL string) (string, string, error) {
+	var uniqueName string
+	if strings.Contains(sourceURL, ".tar.") {
+		uniqueName = fmt.Sprintf("%x.tar%s", sha256.Sum256([]byte(sourceURL)), path.Ext(sourceURL))
+	} else {
+		uniqueName = fmt.Sprintf("%x%s", sha256.Sum256([]byte(sourceURL)), path.Ext(sourceURL))
+	}
+	testCache := filepath.Join(globalconfig.GetGlobalDdevDir(), "testcache")
 	archiveFullPath := filepath.Join(testCache, "tarballs", uniqueName)
 	_ = os.MkdirAll(filepath.Dir(archiveFullPath), 0777)
-	extractPath := filepath.Join(testCache, prefixString)
+	extractPath := filepath.Join(testCache, uniqueName)
 
 	// Check to see if we have it cached, if so just return it.
 	dStat, dErr := os.Stat(extractPath)
@@ -309,12 +313,12 @@ func GetCachedArchive(siteName string, prefixString string, internalExtractionPa
 		return extractPath, archiveFullPath, nil
 	}
 
-	output.UserOut.Printf("Downloading %s", archiveFullPath)
+	output.UserOut.Printf("Downloading %s", sourceURL)
 	_ = os.MkdirAll(extractPath, 0777)
 	err := util.DownloadFile(archiveFullPath, sourceURL, false)
 	if err != nil {
 		_ = os.RemoveAll(archiveFullPath)
-		return extractPath, archiveFullPath, fmt.Errorf("Failed to download url=%s into %s, err=%v", sourceURL, archiveFullPath, err)
+		return extractPath, archiveFullPath, fmt.Errorf("failed to download url=%s into %s, err=%v", sourceURL, archiveFullPath, err)
 	}
 
 	output.UserOut.Printf("Downloaded %s into %s", sourceURL, archiveFullPath)
@@ -323,17 +327,22 @@ func GetCachedArchive(siteName string, prefixString string, internalExtractionPa
 	if err != nil {
 		return extractPath, "", fmt.Errorf("failed to remove %s: %v", extractPath, err)
 	}
+
 	if filepath.Ext(archiveFullPath) == ".zip" {
 		err = archive.Unzip(archiveFullPath, extractPath, internalExtractionPath)
 	} else {
 		err = archive.Untar(archiveFullPath, extractPath, internalExtractionPath)
 	}
+
 	if err != nil {
 		_ = fileutil.PurgeDirectory(extractPath)
 		_ = os.RemoveAll(extractPath)
 		_ = os.RemoveAll(archiveFullPath)
 		return extractPath, archiveFullPath, fmt.Errorf("archive extraction of %s failed err=%v", archiveFullPath, err)
 	}
+
+	output.UserOut.Printf("Extracted %s into %s", archiveFullPath, extractPath)
+
 	return extractPath, archiveFullPath, nil
 }
 

@@ -205,7 +205,7 @@ func TestGetCachedArchive(t *testing.T) {
 	exPath, archPath, err = GetCachedArchive("TestInvalidDownloadURL", "test", "", sourceURL)
 	assert.Error(err)
 	if err != nil {
-		assert.Contains(err.Error(), fmt.Sprintf("Failed to download url=%s into %s", sourceURL, archPath))
+		assert.Contains(err.Error(), fmt.Sprintf("failed to download url=%s into %s", sourceURL, archPath))
 	}
 
 	err = os.RemoveAll(filepath.Dir(exPath))
